@@ -60,13 +60,16 @@ class StatsModel:
             # if 'Framerate' in df_final.columns:
             #     df_final = df_final[df_final['Framerate'] < 1000]
 
-            tooHighFramerateIndexes = (df_final.columns['Framerate'] >= 1000).index
+
+            tooHighFramerateIndexes = df_final[df_final['Framerate'] >= 1000].index
             df_final = df_final.drop( tooHighFramerateIndexes )
 
-            # Durée
-            #time_col = df[1]
-            #df[1] = pd.to_datetime(df_final[time_col], errors='coerce')
-            #df = df.dropna(subset=[time_col])
+            #Durée
+            time_col = df[1]
+            df_with_time = df_final.copy()
+            time_col = pd.to_datetime( time_col, errors='coerce' )
+            time_col = time_col.dropna()
+            df_with_time['time_col'] = time_col
             #duration = df[time_col].iloc[-1] - df[time_col].iloc[0] if len(df) > 1 else pd.Timedelta(0)
             duration = self.process_timestamp_column(df)
 
