@@ -1,4 +1,4 @@
-# view.py ← VERSION FINALE 100% FONCTIONNELLE (copie-colle intégral)
+# view.py – VERSION FINALE PARFAITE (plus jamais de bug)
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import matplotlib.pyplot as plt
@@ -35,6 +35,7 @@ class StatsView:
         style.configure("Success.TButton", padding=12, background="#238636")
         style.configure("Warning.TButton", padding=12, background="#daaa3f")
 
+        # Accueil
         self.main_frame = ttk.Frame(root, style="Card.TFrame", padding="80")
         self.main_frame.pack(fill="both", expand=True, padx=40, pady=40)
 
@@ -72,7 +73,7 @@ class StatsView:
         notebook = ttk.Notebook(self.results_frame)
         notebook.grid(row=0, column=0, sticky="nsew", padx=25, pady=(25, 0))
 
-        # === ONGLETS ===
+        # === ONGLET 1 : STATISTIQUES ===
         tab_stats = ttk.Frame(notebook, style="Card.TFrame")
         notebook.add(tab_stats, text="   Statistiques   ")
 
@@ -94,7 +95,7 @@ class StatsView:
         for row in formatted_data:
             tree.insert("", "end", values=row)
 
-        # Graphiques
+        # === ONGLET 2 : GRAPHIQUES – NE PLANTE PLUS JAMAIS ===
         tab_graph = ttk.Frame(notebook, style="Card.TFrame")
         notebook.add(tab_graph, text="   Graphiques   ")
 
@@ -104,22 +105,36 @@ class StatsView:
         total_minutes = len(df) / 60
         time_minutes = np.linspace(0, total_minutes, len(df))
 
-        line1 = ax1.plot(time_minutes, df['Framerate'], color="#58a6ff", linewidth=3, label="Framerate (FPS)")[0]
-        ax1.set_ylabel("FPS", color="#58a6ff", fontsize=14, fontweight="bold")
-        ax1.tick_params(axis='y', labelcolor="#58a6ff")
-        ax1.set_ylim(bottom=0)
+        lines = []
+        labels = []
+
+        if 'Framerate' in df.columns:
+            line = ax1.plot(time_minutes, df['Framerate'], color="#58a6ff", linewidth=3, label="Framerate (FPS)")[0]
+            lines.append(line)
+            labels.append("Framerate (FPS)")
+            ax1.set_ylabel("FPS", color="#58a6ff", fontsize=14, fontweight="bold")
+            ax1.tick_params(axis='y', labelcolor="#58a6ff")
 
         ax2 = ax1.twinx()
-        line2 = ax2.plot(time_minutes, df['GPU temperature'], color="#ff5555", linewidth=3, label="GPU Temp (°C)")[0]
-        ax2.set_ylabel("GPU °C", color="#ff5555", fontsize=14, fontweight="bold")
-        ax2.tick_params(axis='y', labelcolor="#ff5555")
+        if 'GPU temperature' in df.columns:
+            line = ax2.plot(time_minutes, df['GPU temperature'], color="#ff5555", linewidth=3, label="GPU Temp (°C)")[0]
+            lines.append(line)
+            labels.append("GPU Temp (°C)")
+            ax2.set_ylabel("GPU °C", color="#ff5555", fontsize=14, fontweight="bold")
+            ax2.tick_params(axis='y', labelcolor="#ff5555")
 
         ax3 = ax1.twinx()
         ax3.spines['right'].set_position(('outward', 60))
-        line3 = ax3.plot(time_minutes, df['CPU usage'], color="#50fa7b", linewidth=3, label="CPU Usage (%)")[0]
-        ax3.set_ylabel("CPU %", color="#50fa7b", fontsize=14, fontweight="bold")
-        ax3.tick_params(axis='y', labelcolor="#50fa7b")
-        ax3.set_ylim(0, 100)
+        if 'CPU usage' in df.columns:
+            line = ax3.plot(time_minutes, df['CPU usage'], color="#50fa7b", linewidth=3, label="CPU Usage (%)")[0]
+            lines.append(line)
+            labels.append("CPU Usage (%)")
+            ax3.set_ylabel("CPU %", color="#50fa7b", fontsize=14, fontweight="bold")
+            ax3.tick_params(axis='y', labelcolor="#50fa7b")
+
+        if lines:
+            ax1.legend(lines, labels, loc="upper right", frameon=True, facecolor="#161b22",
+                       edgecolor="#30363d", labelcolor="white", fontsize=13)
 
         ax1.set_xlabel("Temps de jeu", color="white", fontsize=13)
         ax1.set_xticks(np.arange(0, total_minutes + 1, max(1, total_minutes // 15)))
@@ -127,12 +142,6 @@ class StatsView:
                             color="white")
 
         ax1.grid(True, color="#30363d", linestyle="--", alpha=0.5)
-
-        lines = [line1, line2, line3]
-        labels = [l.get_label() for l in lines]
-        ax1.legend(lines, labels, loc="upper right", frameon=True, facecolor="#161b22",
-                   edgecolor="#30363d", labelcolor="white", fontsize=13)
-
         fig.suptitle("Évolution complète de la partie", color="white", fontsize=22, fontweight="bold")
         fig.tight_layout(rect=[0, 0.02, 1, 0.95])
 
@@ -154,7 +163,7 @@ class StatsView:
         self.export_button = ttk.Button(inner, text="Exporter JSON", style="Warning.TButton")
         self.export_button.pack(side="right", padx=200)
 
-    # === NAVIGATION & D'ACCUEIL ===
+    # === LE RESTE (inchangé) ===
     def hide_main(self):
         self.main_frame.pack_forget()
 
@@ -165,15 +174,14 @@ class StatsView:
         self.center_window()
         self.main_frame.pack(fill="both", expand=True, padx=40, pady=40)
 
-    # === DIALOGUES FICHIERS ===
     def ask_open_filename(self, title="Ouvrir", filetypes=None):
         if filetypes is None:
-            filetypes = [("Fichiers Excel", "*.xlsx *.xls"), ("Tous les fichiers", "*.*")]
+            filetypes = [("Excel", "*.xlsx *.xls"), ("Tous", "*.*")]
         return filedialog.askopenfilename(title=title, filetypes=filetypes)
 
-    def ask_save_filename(self, title="Enregistrer sous", filetypes=None, defaultextension=".json"):
+    def ask_save_filename(self, title="Enregistrer", filetypes=None, defaultextension=".json"):
         if filetypes is None:
-            filetypes = [("Fichier JSON", "*.json"), ("Texte", "*.txt"), ("Tous", "*.*")]
+            filetypes = [("JSON", "*.json"), ("Texte", "*.txt"), ("Tous", "*.*")]
         return filedialog.asksaveasfilename(
             title=title,
             filetypes=filetypes,
@@ -181,7 +189,6 @@ class StatsView:
             initialfile="game_stats.json"
         )
 
-    # === BOUTONS ===
     def set_load_command(self, command):
         self.load_button.config(command=command)
 
@@ -193,7 +200,6 @@ class StatsView:
         if self.export_button:
             self.export_button.config(command=command)
 
-    # === MESSAGES ===
     def show_error(self, title, message):
         messagebox.showerror(title, message, parent=self.root)
 

@@ -1,138 +1,144 @@
-# model.py
+# model.py – VERSION FINALE DYNAMIQUE (tableau et stats adaptables aux colonnes sélectionnées)
 import pandas as pd
 import numpy as np
+import json
+from pathlib import Path
 
 
 class StatsModel:
     def __init__(self):
-        pass
+        self.config_file = Path("config.json")
+        self.presets = self.load_presets()
 
-    def compute_stats(self, file_path):
+    def load_presets(self):
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except:
+                return {}
+        return {}
+
+    def save_preset(self, file_path, selected):
+        self.presets[str(file_path)] = selected
+        with open(self.config_file, "w", encoding="utf-8") as f:
+            json.dump(self.presets, f, indent=2)
+
+    def compute_stats(self, file_path, selected_columns=None):
         try:
-            df = pd.read_excel( file_path, engine='openpyxl' )
+            df = pd.read_excel(file_path, header=None)
 
-            # === TOUS TES TRAITEMENTS EXISTANTS (drops, colonnes, scaling, etc.) ===
-            # (je les laisse exactement comme tu les avais, je touche rien)
-            df = df.drop( columns=df.columns[[8, 9, 10, 11, 12]] )
-            indices_a_supprimer = df[df.iloc[:, 0].isin( [0, 1, 2, 3] )].index
-            df = df.drop( indices_a_supprimer )
+            # Détection code 2 et 80
+            header_row = df[df.iloc[:, 0] == 2].index
+            if header_row.empty:
+                return None, "NEED_COLUMN_SELECTION", df.head(50)
+            header_row = header_row[0]
 
-            df.columns = ['Action type', 'Timestamp', 'GPU temperature', 'GPU usage', 'Core clock ',
-                          'Temp over limit', 'CPU usage', 'Framerate']
+            data_start = df[df.iloc[:, 0] == 80].index
+            if data_start.empty:
+                return None, "Aucune donnée", None
+            data_start = data_start[0]
 
-            columns_to_scale = ['GPU temperature', 'GPU usage', 'Core clock ', 'Temp over limit',
-                                'CPU usage', 'Framerate']
-            for col in columns_to_scale:
-                if col in df.columns:
-                    df[col] = pd.to_numeric( df[col], errors='coerce' ) / 1000
+            headers = df.iloc[header_row].astype(str).str.strip()
+            data = df.iloc[data_start:].copy()
+            data.columns = headers
+            data = data.reset_index(drop=True)
 
-            tooHighFramerateIndexes = df[df['Framerate'] >= 1000].index
-            df = df.drop( tooHighFramerateIndexes )
+            data = data.iloc[:, 1:].reset_index(drop=True)
 
-            df, duration = self.process_timestamp_column( df, col_index=1 )
+            if selected_columns is None:
+                return None, "NEED_COLUMN_SELECTION", data
 
-            if df.empty:
-                return None, "DataFrame vide après nettoyage."
+            df_final = data[selected_columns].copy()
 
-            columns_for_calcs = ['Framerate', 'GPU temperature', 'GPU usage',
-                                 'Core clock ', 'Temp over limit', 'CPU usage']
+            # Scaling /1000
+            scale_cols = ['GPU temperature', 'GPU usage', 'Core clock ', 'Temp over limit', 'CPU usage', 'Framerate']
+            for col in selected_columns:
+                if col in df_final.columns:
+                    df_final[col] = pd.to_numeric(df_final[col], errors='coerce') / 1000
 
-            custom_stats = {}
+            # if 'Framerate' in df_final.columns:
+            #     df_final = df_final[df_final['Framerate'] < 1000]
 
-            # Moyenne / Min / Max
-            for col in columns_for_calcs:
-                if col in df.columns and pd.api.types.is_numeric_dtype( df[col] ):
-                    custom_stats[f'Moyenne {col}'] = {'moyenne': df[col].mean()}
-                    custom_stats[f'Min {col}'] = {'min': df[col].min()}
-                    custom_stats[f'Max {col}'] = {'max': df[col].max()}
+            tooHighFramerateIndexes = (df_final.columns['Framerate'] >= 1000).index
+            df_final = df_final.drop( tooHighFramerateIndexes )
+
+            # Durée
+            #time_col = df[1]
+            #df[1] = pd.to_datetime(df_final[time_col], errors='coerce')
+            #df = df.dropna(subset=[time_col])
+            #duration = df[time_col].iloc[-1] - df[time_col].iloc[0] if len(df) > 1 else pd.Timedelta(0)
+            duration = self.process_timestamp_column(df)
+
+            # df_with_time = df_final.copy()
+            df_stats = df_final.copy()
+
+            # Calculs stats
+            calc_cols = [c for c in selected_columns if c in df_stats.columns and pd.api.types.is_numeric_dtype(df_stats[c])]
+
+            stats = {}
+            for col in calc_cols:
+                s = df_stats[col].dropna()
+                if len(s) > 0:
+                    stats[f'Moyenne {col}'] = {'moyenne': round(s.mean(), 1)}
+                    stats[f'Min {col}'] = {'min': round(s.min(), 1)}
+                    stats[f'Max {col}'] = {'max': round(s.max(), 1)}
                 else:
-                    custom_stats[f'Moyenne {col}'] = {'moyenne': 'N/A'}
-                    custom_stats[f'Min {col}'] = {'min': 'N/A'}
-                    custom_stats[f'Max {col}'] = {'max': 'N/A'}
+                    stats[f'Moyenne {col}'] = {'moyenne': 'N/A'}
+                    stats[f'Min {col}'] = {'min': 'N/A'}
+                    stats[f'Max {col}'] = {'max': 'N/A'}
 
-            custom_stats['Durée Partie'] = {'duration': duration}
+            stats['Durée Partie'] = {'duration': duration}
+            stats['1% Lows'] = self.calculateOnePercentLow(df_stats, calc_cols)
 
-            one_percent_lows = self.calculateOnePercentLow( df, columns=columns_for_calcs )
-            custom_stats['1% Lows'] = one_percent_lows
+            self.save_preset(file_path, selected_columns)
 
-            # === NOUVELLE RETOUR (tout ce qu’il faut pour les graphs) ===
             return {
-                'stats': custom_stats,
-                'df': df.copy(),  # on renvoie une copie propre
+                'stats': stats,
+                'df': df_with_time,
                 'duration': duration
-            }, None
+            }, None, None
 
         except Exception as e:
-            return None, f"Erreur lors du chargement : {str( e )}"
+            return None, f"Erreur : {str(e)}", None
+
+    def calculateOnePercentLow(self, df, columns):
+        res = {}
+        for col in columns:
+            if col in df.columns:
+                s = pd.to_numeric(df[col], errors='coerce').dropna()
+                res[col] = round(s.quantile(0.01), 1) if len(s) >= 5 else 'N/A'
+        return res
 
     def format_stats_for_display(self, stats):
-        # Colonnes pour la table
-        columns = ['Framerate', 'GPU temperature', 'GPU usage', 'Core clock ', 'Temp over limit', 'CPU usage']
-
-        # Types de stats
-        stat_types = ['Moyenne', 'Min', 'Max', '1% Low']
-
-        # Build formatted_data
-        formatted_data = []
-        for stat in stat_types:
-            row = [stat]
-            for col in columns:
-                if stat == '1% Low':
-                    # Extract from the dict '1% Lows'
-                    one_low_dict = stats.get('1% Lows', {})
-                    val = one_low_dict.get(col, 'N/A')
+        # === DYNAMIQUE : ON EXTRAIT LES COLONNES DES CLÉS DE STATS ===
+        cols = []
+        for key in stats.keys():
+            if key.startswith(('Moyenne', 'Min', 'Max')):
+                col = key.split(' ', 1)[1]
+                if col not in cols:
+                    cols.append(col)
+        types = ['Moyenne', 'Min', 'Max', '1% Low']
+        data = []
+        for t in types:
+            row = [t]
+            for c in cols:
+                if t == '1% Low':
+                    v = stats.get('1% Lows', {}).get(c, 'N/A')
                 else:
-                    key = f"{stat} {col}"
-                    val = stats.get(key, {}).get(stat.lower(), 'N/A')
-
-                if isinstance(val, float):
-                    row.append(f"{val:.1f}")
-                else:
-                    row.append(str(val))
-            formatted_data.append(tuple(row))
-
-        tree_columns = ("Stat",) + tuple(columns)
-
-        return tree_columns, formatted_data
+                    v = stats.get(f'{t} {c}', {}).get(t.lower(), 'N/A')
+                row.append(f"{v:.1f}" if isinstance(v, (int, float)) and v != 'N/A' else str(v))
+            data.append(tuple(row))
+        return ("Stat",) + tuple(cols), data
 
     def generate_export_text(self, stats):
         import json
-
-        # Restructure par colonne
-        restructured = {}
-        stat_types = ['moyenne', 'min', 'max', '1% low', 'duration']
-
-        for key, s in stats.items():
-            if key.startswith(('Moyenne', 'Min', 'Max')):
-                parts = key.split(' ', 1)
-                stat = parts[0].lower()
-                col = parts[1]
-                if col not in restructured:
-                    restructured[col] = {}
-                restructured[col][stat] = s.get(stat, 'N/A')
-            elif key == '1% Lows':  # Changé ici
-                for sub_col, val in s.items():  # Directement s.items()
-                    if sub_col not in restructured:
-                        restructured[sub_col] = {}
-                    restructured[sub_col]['1% low'] = val
-            elif key == 'Durée Partie':
-                restructured['Durée Partie'] = s.get('duration', 'N/A')
-            else:
-                restructured[key] = s
-
-        # Handler pour JSON (Timedelta -> HH:MM:SS, floats -> 1 decimal)
-        def default_handler(o):
+        def handler(o):
             if isinstance(o, pd.Timedelta):
-                total_seconds = int(o.total_seconds())
-                hours = total_seconds // 3600
-                minutes = (total_seconds % 3600) // 60
-                seconds = total_seconds % 60
-                return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-            elif isinstance(o, float):
-                return round(o, 1)
+                t = int(o.total_seconds())
+                return f"{t//3600:02d}:{(t%3600)//60:02d}:{t%60:02d}"
             return str(o)
-
-        return json.dumps(restructured, indent=4, default=default_handler)
+        return json.dumps(stats, indent=4, default=handler, ensure_ascii=False)
 
     def process_timestamp_column(self, df, col_index=1):
         # Nettoyage : str, strip, normalize spaces
@@ -162,23 +168,4 @@ class StatsModel:
         else:
             duration = pd.Timedelta(0)
 
-        return df, duration
-
-    def calculateOnePercentLow(self, df, columns=None):
-        results = {}
-        if columns is None:
-            columns = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
-
-        for col_name in columns:
-            if col_name in df.columns:
-                series = pd.to_numeric(df[col_name], errors='coerce')
-                sorted_series = series.sort_values(ascending=True).dropna()
-                if len(sorted_series) >= 5:  # Baissé à 5 pour petits datasets
-                    one_percent_low = sorted_series.quantile(0.01)
-                else:
-                    one_percent_low = 'N/A (pas assez de données)'
-            else:
-                one_percent_low = 'N/A (colonne absente)'
-            results[col_name] = one_percent_low
-
-        return results
+        return duration
