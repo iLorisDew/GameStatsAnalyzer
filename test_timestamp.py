@@ -31,5 +31,7 @@ class TestTimestampProcessing( unittest.TestCase ):
         print( test_data )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
+    import pandas as pd
+    print("Test: BANDAS imported successfully")

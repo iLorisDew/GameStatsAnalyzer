@@ -169,3 +169,11 @@ class StatsModel:
             duration = pd.Timedelta(0)
 
         return duration
+
+    if __name__ == "__main__":
+        import pandas as pd  # Test import
+        print( "Test: Pandas imported successfully" )
+        # Ajoute un test réel, ex. si tu as une fonction :
+        # df = pd.read_excel('chemin/vers/test.xlsx')
+        # results = ta_fonction(df)
+        # print(results)
